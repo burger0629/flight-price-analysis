@@ -48,30 +48,33 @@ if st.session_state["secure_token"] is None:
 # ==========================================
 # 🌟 開場動畫 2：注入 CSS 全局滑動淡入特效
 # ==========================================
+# ==========================================
+# 🌟 開場動畫：注入 CSS 全局滑動淡入特效 (已修復版)
+# ==========================================
 st.markdown("""
     <style>
-    /* 網頁載入時的全局淡入滑動動畫 (Opening Animation) */
+    /* 定義滑動淡入的動畫關鍵影格 */
     @keyframes fadeInSlideUp {
-        0% { opacity: 0; transform: translateY(40px); }
+        0% { opacity: 0; transform: translateY(30px); }
         100% { opacity: 1; transform: translateY(0); }
     }
     
-    /* 套用動畫到 Streamlit 的主容器 */
-    .main .block-container {
-        animation: fadeInSlideUp 1.0s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+    /* 🌟 修正：使用現代 Streamlit 專屬的 data-testid 來精準鎖定主容器 */
+    div[data-testid="stMainBlockContainer"] {
+        animation: fadeInSlideUp 0.8s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
     }
 
-    /* 亮色模式數據卡片設計 (加入滑鼠懸浮特效) */
+    /* 亮色模式數據卡片設計 */
     div[data-testid="metric-container"] {
-        background: rgba(240, 248, 255, 0.8); /* 淺藍灰色背景 */
-        border: 1px solid #001f3f; /* 深藍色邊框 */
+        background: rgba(240, 248, 255, 0.8);
+        border: 1px solid #001f3f;
         border-radius: 12px;
         padding: 15px;
         box-shadow: 0 0 10px rgba(0, 31, 63, 0.1);
         transition: all 0.3s ease-in-out;
     }
     
-    /* 🌟 開場動畫 3：滑鼠懸浮時卡片放大呼吸特效 */
+    /* 卡片懸浮放大特效 */
     div[data-testid="metric-container"]:hover {
         transform: scale(1.03); 
         box-shadow: 0 0 18px rgba(0, 31, 63, 0.25);
@@ -79,7 +82,7 @@ st.markdown("""
     
     div[data-testid="stMetricValue"] {
         font-size: 2.2rem !important;
-        color: #001f3f !important; /* 深藍色高對比字體 */
+        color: #001f3f !important;
         text-shadow: none !important;
     }
     </style>
