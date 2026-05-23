@@ -30,7 +30,7 @@ def clear_session():
     st.rerun()
 
 # --- 安全驗證畫面 ---
-if st.session_state["secure_token"] is null:
+if st.session_state["secure_token"] is None:
     st.title("🔒 全球航班智能預測系統 - 安全外部存取閘門")
     st.warning("⚠️ 依據資訊安全協定，本系統採用無狀態（Stateless）架構，不提供保持登入功能。連線階段將於關閉網頁或逾時後自動銷毀。")
     
