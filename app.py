@@ -159,7 +159,7 @@ if st.sidebar.button("🚨 安全登出 ", type="secondary"):
 # ==========================================
 # 🌟 4. 主畫面：航線與日期設定
 # ==========================================
-st.title("✈️ 全球航班智能比價與預測中心")
+st.title("✈️ 印度航班智能比價與預測中心")
 st.caption(f"🔒 權杖: `{st.session_state['secure_token']}` ｜ 連線時間: `{st.session_state['auth_time'].strftime('%H:%M:%S')}`")
 
 with st.expander("📍 第一步：設定航線與艙等", expanded=True):
