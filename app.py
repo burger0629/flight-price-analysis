@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
 import numpy as np
 import os
 import datetime
 import time
 import hashlib
+import plotly.express as px
+import plotly.graph_objects as go
 
 # ==========================================
 # 📑 1. 網頁基本設定與資安無狀態會話管理
@@ -39,9 +39,6 @@ if st.session_state["secure_token"] is None:
 # ==========================================
 # 📑 2. 資料字典與讀取設定
 # ==========================================
-plt.rcParams['axes.unicode_minus'] = False
-sns.set_theme(style="whitegrid")
-
 city_mapping = {"德里 (Delhi)": "Delhi", "孟買 (Mumbai)": "Mumbai", "班加羅爾 (Bangalore)": "Bangalore",
                 "加爾各答 (Kolkata)": "Kolkata", "海德拉巴 (Hyderabad)": "Hyderabad", "清奈 (Chennai)": "Chennai"}
 airline_mapping = {"維斯塔拉 (Vistara)": "Vistara", "印度航空 (Air India)": "Air_India", "靛藍 (IndiGo)": "Indigo",
@@ -121,7 +118,6 @@ def generate_flex_matrix(center_price):
             noise = np.random.uniform(-0.15, 0.25)
             distance_penalty = (abs(i-2) + abs(j-2)) * 0.03
             base_matrix[i, j] = center_price * (1 + noise + distance_penalty)
-    # ✅ 修正 ValueError: 確保安全轉換為整數
     return pd.DataFrame(np.round(base_matrix).astype(int))
 
 # ==========================================
@@ -166,7 +162,7 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
                 col_r3.metric("🔀 轉機條件", selected_stops_zh.split()[0])
                 col_r4.metric("🎟️ 票種折扣", "已套用 -12%" if trip_type == "來回票 (享綁定折扣)" else "單程基準")
 
-                # 🌟 (回歸功能！) 面板 B：早鳥與臨櫃動態價差比較
+                # 🌟 面板 B：早鳥與臨櫃動態價差比較
                 st.markdown("---")
                 st.subheader("📊 早鳥 vs 臨櫃購票價差預測 (已連動時節權重)")
                 base_early = df_filtered[df_filtered['days_left'] >= 45]['price'].mean()
@@ -180,44 +176,67 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
                 if dyn_early > 0 and dyn_last > 0:
                     i_col3.metric("時節預測價差倍數", f"{dyn_last / dyn_early:.2f} 倍", "越晚買越貴提示")
 
-                # 🌟 面板 C：彈性日期票價矩陣
+                # 🌟 面板 C：互動式彈性日期矩陣 (升級 Plotly)
                 st.markdown("---")
-                st.subheader("🗺️ 彈性日期票價熱力矩陣 (前後 2 天)")
-                st.caption("💡 點擊矩陣尋找最具性價比的隱藏航班組合！")
+                st.subheader("🗺️ 互動式彈性日期票價熱力矩陣 (前後 2 天)")
+                st.caption("💡 請將游標懸浮於方塊上以檢視詳細的航班組合與預估票價！")
                 
                 matrix_df = generate_flex_matrix(final_price)
                 outbound_labels = [(depart_date + datetime.timedelta(days=i-2)).strftime("%m/%d") for i in range(5)]
+                
                 if trip_type == "來回票 (享綁定折扣)":
                     inbound_labels = [(return_date + datetime.timedelta(days=i-2)).strftime("%m/%d") for i in range(5)]
-                    matrix_df.index = [f"回程 {d}" for d in inbound_labels]
+                    y_axis_labels = [f"回程 {d}" for d in inbound_labels]
+                    y_title = "回程日期"
                 else:
-                    matrix_df.index = [f"出發 {d}" for d in outbound_labels]
-                matrix_df.columns = [f"出發 {d}" for d in outbound_labels]
+                    y_axis_labels = [f"出發 {d}" for d in outbound_labels]
+                    y_title = "出發日期"
+                    
+                x_axis_labels = [f"出發 {d}" for d in outbound_labels]
 
-                fig_heat, ax_heat = plt.subplots(figsize=(10, 5))
-                sns.heatmap(matrix_df, annot=True, fmt="d", cmap="YlGnBu", cbar_kws={'label': 'Price (INR)'}, ax=ax_heat)
-                plt.xticks(rotation=45)
-                plt.yticks(rotation=0)
-                st.pyplot(fig_heat)
+                # 採用 Plotly 繪製高互動性熱力圖
+                fig_heat = px.imshow(matrix_df, 
+                                     labels=dict(x="出發日期", y=y_title, color="預估票價 (INR)"),
+                                     x=x_axis_labels, 
+                                     y=y_axis_labels,
+                                     text_auto=True, 
+                                     aspect="auto",
+                                     color_continuous_scale="YlGnBu")
+                
+                # 自訂游標懸浮時顯示的中文提示框架
+                fig_heat.update_traces(hovertemplate="<b>出發選擇：</b> %{x}<br><b>回程/其他選擇：</b> %{y}<br><b>💡 預估票價：</b> ₹ %{z:,.0f}<extra></extra>")
+                fig_heat.update_layout(title="彈性日期交叉比價矩陣", title_font_size=18, margin=dict(t=50, l=50, r=50, b=50))
+                st.plotly_chart(fig_heat, use_container_width=True)
 
-                # 🌟 (回歸功能！) 面板 D：歷史大趨勢波形圖
+                # 🌟 面板 D：互動式大趨勢波形圖 (升級 Plotly)
                 st.markdown("---")
-                st.subheader(f"📈 購票倒數天數與歷史基礎票價波動趨勢圖 ({class_zh})")
+                st.subheader(f"📈 購票倒數天數與歷史基礎票價互動趨勢圖 ({class_zh})")
+                st.caption("💡 拖曳可放大圖表，滑鼠懸浮可精確查看每天的歷史基礎票價落點。")
                 
-                fig_line, ax_line = plt.subplots(figsize=(12, 4))
-                sns.lineplot(data=df_filtered, x='days_left', y='price', color='#3498db', linewidth=2.5, errorbar=None, ax=ax_line)
-                ax_line.invert_xaxis()
+                # 將 Seaborn 自動群組平均的動作改為 Pandas 先處理，再交給 Plotly 畫線
+                df_line = df_filtered.groupby('days_left')['price'].mean().reset_index()
                 
-                if calc_days in df_filtered['days_left'].values:
-                    hist_mean = df_filtered[df_filtered['days_left'] == calc_days]['price'].mean()
-                    ax_line.plot(calc_days, hist_mean, marker='o', markersize=10, color='red')
-                    ax_line.annotate('Your Query Target', xy=(calc_days, hist_mean), 
-                                 xytext=(calc_days + 3, hist_mean * 1.15),
-                                 arrowprops=dict(facecolor='red', shrink=0.05),
-                                 fontsize=11, fontweight='bold', color='red')
-                ax_line.set_xlabel('Days Left Until Departure', fontsize=10)
-                ax_line.set_ylabel('Base Price (INR)', fontsize=10)
-                st.pyplot(fig_line)
+                fig_line = px.line(df_line, x='days_left', y='price', markers=True)
+                fig_line.update_traces(line_color='#3498db', line_width=3, marker=dict(size=6),
+                                       hovertemplate="<b>出發倒數：</b> %{x} 天<br><b>基準票價：</b> ₹ %{y:,.0f}<extra></extra>")
+                
+                # 設定反轉 X 軸 (讓出發日 1 天在最右邊)
+                fig_line.update_layout(xaxis_title='出發倒數天數 (Days Left)', 
+                                       yaxis_title='歷史平均基準價 (INR)',
+                                       xaxis_autorange='reversed',
+                                       hovermode="x unified")
+                
+                # 動態標註使用者的查詢目標點
+                if calc_days in df_line['days_left'].values:
+                    hist_mean = df_line[df_line['days_left'] == calc_days]['price'].iloc[0]
+                    fig_line.add_scatter(x=[calc_days], y=[hist_mean], mode='markers+text',
+                                         marker=dict(color='red', size=14, symbol='star'),
+                                         text=['📌 您的查詢落點'], textposition='top center',
+                                         textfont=dict(color='red', size=14),
+                                         name='查詢目標',
+                                         hovertemplate="<b>📌 您的查詢目標</b><br>出發倒數： %{x} 天<br>基準票價： ₹ %{y:,.0f}<extra></extra>")
+
+                st.plotly_chart(fig_line, use_container_width=True)
 
                 # 🌟 面板 E：主動降價追蹤警示
                 st.markdown("---")
