@@ -60,7 +60,7 @@ def load_fallback_data():
 df_all = load_fallback_data()
 
 # ==========================================
-# 🌟 3. 側邊欄：核心引擎與進階篩選器 (功能 2 整合)
+# 🌟 3. 側邊欄：核心引擎與進階篩選器
 # ==========================================
 st.sidebar.header("⚙️ 預測引擎與安全控制")
 api_status_sim = st.sidebar.radio("🌐 資料源狀態", ["連線健康 (調用即時 API)", "斷線異常 (大數據降級備援)"])
@@ -76,7 +76,7 @@ if st.sidebar.button("🚨 安全登出 (銷毀權杖)", type="secondary"):
     clear_session()
 
 # ==========================================
-# 🌟 4. 主畫面：航線與日期設定 (功能 3 整合)
+# 🌟 4. 主畫面：航線與日期設定
 # ==========================================
 st.title("✈️ 全球航班智能比價與預測中心")
 st.caption(f"🔒 權杖: {st.session_state['secure_token']} ｜ 連線時間: {st.session_state['auth_time'].strftime('%H:%M:%S')}")
@@ -102,31 +102,27 @@ with st.expander("🗓️ 第二步：選擇出發與回程日期", expanded=Tru
 # 🌟 5. 核心演算法與矩陣生成
 # ==========================================
 def machine_learning_inference(base_price, days_left, month, is_wknd, is_round_trip):
-    """結合 XGBoost 邏輯與來回票特徵的推論引擎"""
     multiplier = 1.0
-    if month in [10, 11]: multiplier = 1.45 # 排燈節
-    elif month == 3: multiplier = 1.35 # 灑紅節
-    elif month in [7, 8, 9]: multiplier = 0.85 # 雨季
+    if month in [10, 11]: multiplier = 1.45
+    elif month == 3: multiplier = 1.35
+    elif month in [7, 8, 9]: multiplier = 0.85
     
     if is_wknd: multiplier += 0.08
-    if is_round_trip: multiplier *= 0.88 # 來回票套票折扣特徵 (-12%)
-    if days_left <= 3: multiplier *= 1.25 # 最後一刻非線性暴漲
+    if is_round_trip: multiplier *= 0.88
+    if days_left <= 3: multiplier *= 1.25
     
-    return round(base_price * multiplier), 0.94, 8.7 # 模擬回傳：價格, 置信度, 毫秒數
+    return round(base_price * multiplier), multiplier, 0.94, 8.7 
 
-def generate_flex_matrix(center_price, is_round_trip):
-    """產生 5x5 彈性日期熱力圖矩陣數據 (功能 1 整合)"""
+def generate_flex_matrix(center_price):
     np.random.seed(int(time.time()))
-    # 建立一個基礎的波動矩陣，中心點最接近 center_price，周圍根據週末/天數產生波動
     base_matrix = np.zeros((5, 5))
     for i in range(5):
         for j in range(5):
-            # 模擬前後兩天的價格波動 (介於 -15% 到 +25% 之間)
             noise = np.random.uniform(-0.15, 0.25)
-            # 距離中心點越遠，價格波動邏輯
             distance_penalty = (abs(i-2) + abs(j-2)) * 0.03
             base_matrix[i, j] = center_price * (1 + noise + distance_penalty)
-    return pd.DataFrame(base_matrix, dtype=int)
+    # ✅ 修正 ValueError: 確保安全轉換為整數
+    return pd.DataFrame(np.round(base_matrix).astype(int))
 
 # ==========================================
 # 🌟 6. 執行查詢與呈現結果
@@ -138,10 +134,10 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
         st.warning("⚠️ 出發地與目的地不可相同！")
     else:
         st.markdown("---")
-        with st.spinner("🧠 ML 推論引擎運算中..."):
-            time.sleep(1.2) # 模擬運算感
+        with st.spinner("🧠 整合大數據與 ML 推論引擎運算中..."):
+            time.sleep(1.2)
             
-            # 1. 後台資料過濾 (加入轉機與時長篩選)
+            # 1. 後台資料過濾
             source_en, dest_en = city_mapping[source_zh], city_mapping[dest_zh]
             df_filtered = df_all[(df_all['source_city'] == source_en) & (df_all['destination_city'] == dest_en)]
             df_filtered = df_filtered[df_filtered['class'] == ("Economy" if class_zh == "經濟艙" else "Business")]
@@ -153,14 +149,13 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
             if 'duration' in df_filtered.columns:
                 df_filtered = df_filtered[df_filtered['duration'] <= max_duration]
 
-            # 2. 計算基礎與預測價格
             calc_days = max((depart_date - today).days, 1)
             
             if df_filtered.empty:
-                st.error("❌ 查無符合此極端條件的歷史航班，請放寬『轉機次數』或『飛行時長』等篩選條件。")
+                st.error("❌ 查無符合條件的歷史航班，請放寬篩選條件。")
             else:
                 base_price = df_filtered['price'].mean()
-                final_price, conf, speed = machine_learning_inference(
+                final_price, multiplier, conf, speed = machine_learning_inference(
                     base_price, calc_days, depart_date.month, depart_date.weekday() >= 5, trip_type == "來回票 (享綁定折扣)"
                 )
 
@@ -169,51 +164,71 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
                 col_r1.metric("💰 AI 最佳預估總價", f"₹ {final_price:,.0f} INR")
                 col_r2.metric("🎯 演算法置信度", f"{conf*100:.1f} %")
                 col_r3.metric("🔀 轉機條件", selected_stops_zh.split()[0])
-                if trip_type == "來回票 (享綁定折扣)":
-                    col_r4.metric("🎟️ 套票優惠", "已套用 -12%")
-                else:
-                    col_r4.metric("🎟️ 票種", "單程")
+                col_r4.metric("🎟️ 票種折扣", "已套用 -12%" if trip_type == "來回票 (享綁定折扣)" else "單程基準")
 
+                # 🌟 (回歸功能！) 面板 B：早鳥與臨櫃動態價差比較
                 st.markdown("---")
-                
-                # 🌟 面板 B：彈性日期票價矩陣 (功能 1 整合)
+                st.subheader("📊 早鳥 vs 臨櫃購票價差預測 (已連動時節權重)")
+                base_early = df_filtered[df_filtered['days_left'] >= 45]['price'].mean()
+                base_last = df_filtered[df_filtered['days_left'] <= 2]['price'].mean()
+                dyn_early = base_early * multiplier if pd.notna(base_early) else 0
+                dyn_last = base_last * multiplier if pd.notna(base_last) else 0
+
+                i_col1, i_col2, i_col3 = st.columns(3)
+                i_col1.metric("該時節預估早鳥價 (45天前訂)", f"₹ {dyn_early:,.0f}" if dyn_early > 0 else "數據不足")
+                i_col2.metric("該時節預估臨櫃價 (出發前2天)", f"₹ {dyn_last:,.0f}" if dyn_last > 0 else "數據不足")
+                if dyn_early > 0 and dyn_last > 0:
+                    i_col3.metric("時節預測價差倍數", f"{dyn_last / dyn_early:.2f} 倍", "越晚買越貴提示")
+
+                # 🌟 面板 C：彈性日期票價矩陣
+                st.markdown("---")
                 st.subheader("🗺️ 彈性日期票價熱力矩陣 (前後 2 天)")
-                st.caption("💡 顏色越深代表價格越高。點擊矩陣尋找最具性價比的隱藏航班組合！")
+                st.caption("💡 點擊矩陣尋找最具性價比的隱藏航班組合！")
                 
-                matrix_df = generate_flex_matrix(final_price, trip_type == "來回票 (享綁定折扣)")
-                
-                # 設定矩陣的欄列標籤
+                matrix_df = generate_flex_matrix(final_price)
                 outbound_labels = [(depart_date + datetime.timedelta(days=i-2)).strftime("%m/%d") for i in range(5)]
                 if trip_type == "來回票 (享綁定折扣)":
                     inbound_labels = [(return_date + datetime.timedelta(days=i-2)).strftime("%m/%d") for i in range(5)]
                     matrix_df.index = [f"回程 {d}" for d in inbound_labels]
                 else:
-                    matrix_df.index = [f"出發 {d}" for d in outbound_labels] # 單程票的變形展示
-                
+                    matrix_df.index = [f"出發 {d}" for d in outbound_labels]
                 matrix_df.columns = [f"出發 {d}" for d in outbound_labels]
 
-                # 繪製 Seaborn 熱力圖
-                fig, ax = plt.subplots(figsize=(10, 5))
-                sns.heatmap(matrix_df, annot=True, fmt="d", cmap="YlGnBu", cbar_kws={'label': 'Price (INR)'}, ax=ax)
-                ax.set_title("Flexible Dates Fare Matrix", pad=20, fontweight="bold")
+                fig_heat, ax_heat = plt.subplots(figsize=(10, 5))
+                sns.heatmap(matrix_df, annot=True, fmt="d", cmap="YlGnBu", cbar_kws={'label': 'Price (INR)'}, ax=ax_heat)
                 plt.xticks(rotation=45)
                 plt.yticks(rotation=0)
-                st.pyplot(fig)
+                st.pyplot(fig_heat)
 
-                # 🌟 面板 C：主動降價追蹤警示 (功能 4 整合)
+                # 🌟 (回歸功能！) 面板 D：歷史大趨勢波形圖
+                st.markdown("---")
+                st.subheader(f"📈 購票倒數天數與歷史基礎票價波動趨勢圖 ({class_zh})")
+                
+                fig_line, ax_line = plt.subplots(figsize=(12, 4))
+                sns.lineplot(data=df_filtered, x='days_left', y='price', color='#3498db', linewidth=2.5, errorbar=None, ax=ax_line)
+                ax_line.invert_xaxis()
+                
+                if calc_days in df_filtered['days_left'].values:
+                    hist_mean = df_filtered[df_filtered['days_left'] == calc_days]['price'].mean()
+                    ax_line.plot(calc_days, hist_mean, marker='o', markersize=10, color='red')
+                    ax_line.annotate('Your Query Target', xy=(calc_days, hist_mean), 
+                                 xytext=(calc_days + 3, hist_mean * 1.15),
+                                 arrowprops=dict(facecolor='red', shrink=0.05),
+                                 fontsize=11, fontweight='bold', color='red')
+                ax_line.set_xlabel('Days Left Until Departure', fontsize=10)
+                ax_line.set_ylabel('Base Price (INR)', fontsize=10)
+                st.pyplot(fig_line)
+
+                # 🌟 面板 E：主動降價追蹤警示
                 st.markdown("---")
                 st.subheader("🔔 設定專屬降價追蹤警示")
-                st.markdown("AI 大腦會在後台持續為您監控此航線，當票價跌破您的目標價時，第一時間通知您。")
-                
                 with st.form("price_alert_form"):
                     col_f1, col_f2 = st.columns(2)
                     target_price = col_f1.number_input("🎯 您的理想目標價 (INR)", value=int(final_price * 0.9), step=500)
                     user_email = col_f2.text_input("📧 接收通知的 Email", placeholder="example@gmail.com")
-                    submitted = st.form_submit_button("開啟 24H 智能監控")
-                    
-                    if submitted:
+                    if st.form_submit_button("開啟 24H 智能監控"):
                         if "@" in user_email:
-                            st.success(f"✅ 設定成功！當 【{source_zh} ✈️ {dest_zh}】 票價低於 ₹ {target_price:,} 時，系統將立即發送加密郵件至 {user_email}。")
+                            st.success(f"✅ 設定成功！當票價低於 ₹ {target_price:,} 時將通知 {user_email}。")
                             st.balloons()
                         else:
                             st.error("⚠️ 請輸入有效的 Email 格式。")
