@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 # ==========================================
 # 📑 1. 網頁基本設定與資安無狀態會話管理
 # ==========================================
-st.set_page_config(page_title="全球航班智能預測系統", page_icon="✈️", layout="wide")
+st.set_page_config(page_title="印度航班智能預測系統", page_icon="✈️", layout="wide")
 
 if "secure_token" not in st.session_state:
     st.session_state["secure_token"] = None
@@ -28,7 +28,7 @@ def clear_session():
 
 # --- 🔒 安全閘門畫面 ---
 if st.session_state["secure_token"] is None:
-    st.title("🔒 全球航班智能預測系統 - 安全外部存取閘門")
+    st.title("🔒 印度航班智能預測系統 - 安全外部存取閘門")
     st.warning("⚠️ 依據資訊安全協定，本系統採用無狀態（Stateless）架構。為確保最高安全性，不提供「保持登入」功能，連線階段將於關閉網頁或逾時後自動銷毀。")
     
     if st.button("建立安全無狀態連線並初始化環境", type="primary"):
@@ -153,7 +153,7 @@ selected_stops_zh = st.sidebar.selectbox("🔀 轉機偏好", list(stops_mapping
 max_duration = st.sidebar.slider("⏱️ 最大容忍飛行時長 (小時)", 2.0, 30.0, 30.0, 0.5)
 
 st.sidebar.markdown("---")
-if st.sidebar.button("🚨 安全登出 (強制銷毀權杖)", type="secondary"):
+if st.sidebar.button("🚨 安全登出 ", type="secondary"):
     clear_session()
 
 # ==========================================
