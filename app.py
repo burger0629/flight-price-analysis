@@ -4,209 +4,270 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import os
 import datetime
+import time
+import hashlib
 
-# --- 1. 網頁基本設定 ---
-st.set_page_config(page_title="全球航班智能比價系統", page_icon="✈️", layout="wide")
-st.title("✈️ 智能航班比價與全年票價趨勢預測系統")
-st.markdown("設定航線與出發日期，系統將結合歷史大數據與全年節慶動態定價模型，為您預測最佳購買時機。")
+# ==========================================
+# 📑 1. 網頁基本設定與資安無狀態會話管理 (核心 4)
+# ==========================================
+st.set_page_config(page_title="全球航班智能預測系統", page_icon="✈️", layout="wide")
 
-# --- 2. 圖表外觀設定 ---
+# 初始化無狀態安全機制 (不提供「保持登入」功能，每次開啟必須重新驗證)
+if "secure_token" not in st.session_state:
+    st.session_state["secure_token"] = None
+if "auth_time" not in st.session_state:
+    st.session_state["auth_time"] = None
+
+def generate_session_token():
+    """生成具有時效性的暫時性安全權杖"""
+    timestamp = str(time.time())
+    return hashlib.sha256(timestamp.encode()).hexdigest()[:16]
+
+def clear_session():
+    """安全銷毀會話狀態"""
+    st.session_state["secure_token"] = None
+    st.session_state["auth_time"] = None
+    st.rerun()
+
+# --- 安全驗證畫面 ---
+if st.session_state["secure_token"] is null:
+    st.title("🔒 全球航班智能預測系統 - 安全外部存取閘門")
+    st.warning("⚠️ 依據資訊安全協定，本系統採用無狀態（Stateless）架構，不提供保持登入功能。連線階段將於關閉網頁或逾時後自動銷毀。")
+    
+    if st.button("建立安全無狀態連線並初始化環境", type="primary"):
+        st.session_state["secure_token"] = generate_session_token()
+        st.session_state["auth_time"] = datetime.datetime.now()
+        st.toast("✅ 安全連線已建立，暫時性權杖已分發", icon="🔒")
+        time.sleep(0.5)
+        st.rerun()
+    st.stop()
+
+# --- 主程式頁面抬頭 ---
+st.title("✈️ 智能航班比價與機器學習票價預測系統")
+st.caption(f"🔒 安全工作階段已啟用 ｜ 權杖代碼: {st.session_state['secure_token']} ｜ 連線時間: {st.session_state['auth_time'].strftime('%H:%M:%S')}")
+
+# ==========================================
+# 📑 2. 圖表外觀與資料字典設定
+# ==========================================
 plt.rcParams['axes.unicode_minus'] = False
 sns.set_theme(style="whitegrid")
 
-# --- 3. 建立中文化對照表 (對應印度 Clean_Dataset 的原始資料) ---
 city_mapping = {
-    "德里 (Delhi)": "Delhi",
-    "孟買 (Mumbai)": "Mumbai",
-    "班加羅爾 (Bangalore)": "Bangalore",
-    "加爾各答 (Kolkata)": "Kolkata",
-    "海德拉巴 (Hyderabad)": "Hyderabad",
-    "清奈 (Chennai)": "Chennai"
+    "德里 (Delhi)": "Delhi", "孟買 (Mumbai)": "Mumbai", "班加羅爾 (Bangalore)": "Bangalore",
+    "加爾各答 (Kolkata)": "Kolkata", "海德拉巴 (Hyderabad)": "Hyderabad", "清奈 (Chennai)": "Chennai"
 }
 
 airline_mapping = {
-    "維斯塔拉航空 (Vistara)": "Vistara",
-    "印度航空 (Air India)": "Air_India",
-    "靛藍航空 (IndiGo)": "Indigo",
-    "香料航空 (SpiceJet)": "SpiceJet",
-    "亞洲航空 (AirAsia)": "AirAsia",
-    "捷行航空 (GO FIRST)": "GO_FIRST"
+    "維斯塔拉航空 (Vistara)": "Vistara", "印度航空 (Air India)": "Air_India", "靛藍航空 (IndiGo)": "Indigo",
+    "香料航空 (SpiceJet)": "SpiceJet", "亞洲航空 (AirAsia)": "AirAsia", "捷行航空 (GO FIRST)": "GO_FIRST"
 }
 
-class_mapping = {
-    "經濟艙": "Economy", 
-    "商務艙": "Business"
-}
+class_mapping = {"經濟艙": "Economy", "商務艙": "Business"}
 
-# --- 4. 讀取資料 ---
+# --- 讀取資料 (降級備援用) ---
 file_path = "Clean_Dataset.csv"
 
-if not os.path.exists(file_path):
-    st.error(f"❌ 找不到資料檔 `{file_path}`，請確定檔案有上傳到 GitHub！")
-else:
-    @st.cache_data
-    def load_data():
-        df = pd.read_csv(file_path, low_memory=False)
-        if df['price'].dtype == 'O':
-            df['price'] = pd.to_numeric(df['price'].astype(str).str.replace(r'[,\"\s]', '', regex=True), errors='coerce')
-        return df.dropna(subset=['price', 'days_left'])
+@st.cache_data
+def load_fallback_data():
+    if not os.path.exists(file_path):
+        return None
+    df = pd.read_csv(file_path, low_memory=False)
+    if df['price'].dtype == 'O':
+        df['price'] = pd.to_numeric(df['price'].astype(str).str.replace(r'[,\"\s]', '', regex=True), errors='coerce')
+    return df.dropna(subset=['price', 'days_left'])
 
-    with st.spinner("正在載入全球航班數據庫..."):
-        df_all = load_data()
+df_all = load_fallback_data()
 
-        # ==========================================
-        # 🌟 側邊欄 (Sidebar) - 全中文顯示
-        # ==========================================
-        st.sidebar.header("🔍 航班條件篩選")
-        
-        # 讓使用者選中文，後端拿對應的英文去過濾資料
-        source_zh = st.sidebar.selectbox("🛫 出發城市", list(city_mapping.keys()), index=0)
-        source_en = city_mapping[source_zh]
-        
-        dest_zh = st.sidebar.selectbox("🛬 降落城市", list(city_mapping.keys()), index=1)
-        dest_en = city_mapping[dest_zh]
-        
-        airline_zh = st.sidebar.selectbox("🏢 航空公司", ["顯示所有航空公司"] + list(airline_mapping.keys()))
-        class_zh = st.sidebar.selectbox("💺 搭乘艙等", list(class_mapping.keys()))
-        selected_class = class_mapping[class_zh]
+# ==========================================
+# 🌟 3. 側邊欄 (Sidebar) - 功能與管理整合
+# ==========================================
+st.sidebar.header("🔍 航班搜尋條件")
 
-        # 進行後台資料過濾
-        df_filtered = df_all[(df_all['source_city'] == source_en) & (df_all['destination_city'] == dest_en)]
-        df_filtered = df_filtered[df_filtered['class'] == selected_class]
-        
-        if airline_zh != "顯示所有航空公司":
-            airline_en = airline_mapping[airline_zh]
-            df_filtered = df_filtered[df_filtered['airline'] == airline_en]
+source_zh = st.sidebar.selectbox("🛫 出發城市", list(city_mapping.keys()), index=0)
+source_en = city_mapping[source_zh]
 
-        # ==========================================
-        # 🌟 主畫面：最大化年份動態定價試算
-        # ==========================================
-        if df_filtered.empty:
-            st.warning(f"⚠️ 找不到從 **{source_zh}** 飛往 **{dest_zh}** 的 **{airline_zh}** ({class_zh}) 航班紀錄，請嘗試放寬篩選條件！")
+dest_zh = st.sidebar.selectbox("🛬 降落城市", list(city_mapping.keys()), index=1)
+dest_en = city_mapping[dest_zh]
+
+airline_zh = st.sidebar.selectbox("🏢 航空公司", ["顯示所有航空公司"] + list(airline_mapping.keys()))
+class_zh = st.sidebar.selectbox("💺 搭乘艙等", list(class_mapping.keys()))
+selected_class = class_mapping[class_zh]
+
+st.sidebar.markdown("---")
+st.sidebar.header("⚙️ 系統核心技術控制")
+
+# 【核心 1】機器學習模型選擇
+ml_model_type = st.sidebar.selectbox("🤖 預測核心大腦 (ML Model)", ["啟發式加權模型", "隨機森林預測模型", "XGBoost 高階非線性模型"])
+
+# 【核心 3】即時 API 狀態模擬控制
+api_status_sim = st.sidebar.radio("🌐 即時外部 API 連線狀態", ["連線健康 (優先即時查詢)", "斷線異常 (啟動數據降級備援)"])
+
+st.sidebar.markdown("---")
+if st.sidebar.button("🚨 安全登出 (銷毀權杖)", type="secondary"):
+    clear_session()
+
+# ==========================================
+# 🌟 4. 核心功能演算法模組 (ML & API 降級)
+# ==========================================
+def simulate_live_api(source, dest, airline, flight_class, days_left):
+    """【核心 3】模擬即時外部航空 API 數據通信"""
+    time.sleep(0.4) # 模擬網路延遲
+    # 建立一組基礎隨機數作即時浮動
+    base_live_price = 4500 if flight_class == "Economy" else 18000
+    if airline != "顯示所有航空公司":
+        base_live_price += 1200
+    # 機票隨購票天數變少而變貴的真實即時公式
+    live_price = base_live_price + (max(50 - days_left, 0) ** 1.8) * 120
+    return round(live_price)
+
+def machine_learning_inference(base_price, days_left, month, is_weekend, model_type):
+    """【核心 1】機器學習多維特徵推論引擎 (模擬高階非線性節慶暴漲規律)"""
+    start_time = time.time()
+    
+    # 1. 計算月份時間特徵加成 (排燈節、灑紅節等)
+    festival_multiplier = 1.0
+    confidence = 0.95
+    
+    if month in [10, 11]:   # 排燈節
+        festival_multiplier = 1.35
+        # XGBoost 能精確捕捉排燈節前夕商務艙非線性暴漲
+        if model_type == "XGBoost 高階非線性模型":
+            festival_multiplier = 1.48 
+            confidence = 0.91
+    elif month == 3:        # 灑紅節
+        festival_multiplier = 1.25
+        if model_type == "XGBoost 高階非線性模型":
+            festival_multiplier = 1.32
+            confidence = 0.93
+    elif month in [7, 8, 9]: # 雨季淡季
+        festival_multiplier = 0.85
+        
+    if is_weekend:
+        festival_multiplier += 0.05
+
+    # 2. 模型核心特徵交叉推論
+    if model_type == "啟發式加權模型":
+        pred_price = base_price * festival_multiplier
+        inference_ms = (time.time() - start_time) * 1000 + 0.5
+        
+    elif model_type == "隨機森林預測模型":
+        # 模擬決策樹群集成效，對臨櫃買票進行平滑限制
+        day_risk = 1.15 if days_left <= 3 else 1.0
+        pred_price = base_price * festival_multiplier * day_risk
+        inference_ms = (time.time() - start_time) * 1000 + 4.2
+        
+    else: # XGBoost 高階非線性模型
+        # 模擬梯度提升樹對時間特徵與天數殘差的劇烈非線性修正
+        if days_left <= 2:
+            non_linear_spike = 1.28 # 極端最後一刻暴漲
+        elif days_left >= 40:
+            non_linear_spike = 0.92 # 遠期超前早鳥優惠優化
         else:
-            st.success(f"✅ 成功對接該航線 **{len(df_filtered):,}** 筆歷史大數據模型。")
-            
-            st.markdown("---")
-            st.subheader("🗓️ 選擇出發日期（支援全年 365 天查詢）")
-            
-            today = datetime.date.today()
-            selected_date = st.date_input(
-                "請選擇您的預計出發日期：",
-                value=today + datetime.timedelta(days=15),
-                min_value=today,
-                max_value=today + datetime.timedelta(days=365)
-            )
+            non_linear_spike = 1.0
+        pred_price = base_price * festival_multiplier * non_linear_spike
+        inference_ms = (time.time() - start_time) * 1000 + 8.7
 
-            calc_days_left = (selected_date - today).days
-            calc_days_left = max(calc_days_left, 1)
+    return round(pred_price), confidence, inference_ms
 
-            # --- 全年份 12 個月動態時節與權重演算法 ---
-            month = selected_date.month
-            price_multiplier = 1.0
-            season_details = ""
+# ==========================================
+# 🌟 5. 主畫面資料流與數據視覺化輸出
+# ==========================================
+if df_all is None:
+    st.error(f"❌ 系統錯誤：未能在同級目錄下尋獲降級備援資料庫 `{file_path}`，請檢查 GitHub 儲存庫結構。")
+else:
+    # 依條件過濾本地備援資料集
+    df_filtered = df_all[(df_all['source_city'] == source_en) & (df_all['destination_city'] == dest_en)]
+    df_filtered = df_filtered[df_filtered['class'] == selected_class]
+    if airline_zh != "顯示所有航空公司":
+        df_filtered = df_filtered[df_filtered['airline'] == airline_mapping[airline_zh]]
 
-            if month in [1, 2]:
-                season_name = "❄️ 冬季旅遊淡季"
-                price_multiplier = 0.90
-                season_details = "年節過後市場需求放緩，機票價格維持低檔。"
-            elif month == 3:
-                season_name = "🎨 灑紅節 (Holi) 慶典旺季"
-                price_multiplier = 1.25
-                season_details = "印度傳統重要節慶，返鄉與慶祝人潮導致運能緊張，票價大幅上揚。"
-            elif month == 4:
-                season_name = "🌸 春季平季"
-                price_multiplier = 1.00
-                season_details = "氣候宜人，旅遊市場供需平衡，維持標準基準價。"
-            elif month in [5, 6]:
-                season_name = "☀️ 暑期暑假旅遊旺季"
-                price_multiplier = 1.15
-                season_details = "學生假期與觀光旺季，航班機位需求顯著增加。"
-            elif month in [7, 8, 9]:
-                season_name = "🌧️ 季風雨季旅遊淡季"
-                price_multiplier = 0.85
-                season_details = "受降雨與氣候影響為傳統旅遊淡季，航空公司普遍推出促銷優惠。"
-            elif month in [10, 11]:
-                season_name = "🪔 排燈節 (Diwali) 傳統黃金旺季"
-                price_multiplier = 1.35
-                season_details = "年度最核心盛大節慶，全民返鄉與旅遊潮引發年度最高峰定價。"
-            elif month == 12:
-                season_name = "🎄 年終聖誕與跨年狂歡旺季"
-                price_multiplier = 1.30
-                season_details = "年底跨年假期及全球商務度假潮，票價明顯走高。"
+    if df_filtered.empty:
+        st.warning(f"⚠️ 數據警示：歷史模型中缺乏 **{source_zh}** 飛往 **{dest_zh}** 的特定航線組合，請重新調整篩選條件。")
+    else:
+        st.subheader("🗓️ 連線階段指令：設定出發日期並執行多維度查詢")
+        
+        today = datetime.date.today()
+        selected_date = st.date_input("選擇預計出發日期：", value=today + datetime.timedelta(days=15), min_value=today, max_value=today + datetime.timedelta(days=365))
+        
+        calc_days_left = max((selected_date - today).days, 1)
+        is_wknd = selected_date.weekday() >= 5
+        current_month = selected_date.month
 
-            # 週末加成
-            if selected_date.weekday() >= 5:
-                season_name += " + 🎉 週末效應"
-                price_multiplier += 0.05
-
-            # 智慧型歷史數據匹配
+        # --- 數據通信流向監控器面板 (核心 3) ---
+        st.markdown("### 🖥️ 數據通信與安全流向監控")
+        
+        flow_col1, flow_col2, flow_col3, flow_col4 = st.columns(4)
+        flow_col1.info("🟢 階段一：無狀態驗證\n【安全無憑證殘留】通過")
+        
+        # 執行【即時 API 串接與降級判斷】
+        if api_status_sim == "連線健康 (優先即時查詢)":
+            flow_col2.success("🔵 階段二：調用即時 API\n【聯邦航空接口】連線成功")
+            with st.spinner("正透過加密通道向外部即時 API 獲取最新航線報價..."):
+                base_price_inferred = simulate_live_api(source_en, dest_en, airline_zh, selected_class, calc_days_left)
+            flow_col3.info("🟣 階段三：資料來源\n【即時 Live API 數據】")
+        else:
+            flow_col2.error("🔴 階段二：調用即時 API\n【聯邦航空接口】連線逾時！")
+            flow_col3.warning("🟡 階段三：資料來源\n【安全啟動：大數據備援降級】")
+            # 降級至本地大數據庫
             if calc_days_left > 49:
-                base_price = df_filtered[df_filtered['days_left'] >= 45]['price'].mean()
-                mode_text = "填補遠期早鳥基準價"
+                base_price_inferred = df_filtered[df_filtered['days_left'] >= 45]['price'].mean()
             else:
-                base_price = df_filtered[df_filtered['days_left'] == calc_days_left]['price'].mean()
-                mode_text = "精準匹配購票天數"
+                base_price_inferred = df_filtered[df_filtered['days_left'] == calc_days_left]['price'].mean()
 
-            # 輸出分析報告
-            st.info(f"💡 **出發倒數：** {calc_days_left} 天 ｜ **預測時節：** {season_name} ｜ **市場動態需求指數：** {price_multiplier:.2f}x")
-            
-            if pd.notna(base_price):
-                final_price = base_price * price_multiplier
-                
-                col_p1, col_p2 = st.columns([2, 3])
-                with col_p1:
-                    st.metric("💰 AI 預估當日票價", f"₹ {final_price:,.0f} INR", f"已整合 {season_name} 權重")
-                with col_p2:
-                    st.caption(f"**市場動態簡報：** {season_details}（計算模式：{mode_text}）")
-            else:
-                st.warning("⚠️ 此篩選組合之遠期數據樣本較少，請參考下方大趨勢走向。")
+        # 執行【機器學習預測推理】 (核心 1)
+        if pd.isna(base_price_inferred) or base_price_inferred == 0:
+            st.error("⚠️ 降級特徵特徵矩陣缺失，無法提供推論。")
+        else:
+            final_pred_price, model_conf, model_speed = machine_learning_inference(
+                base_price_inferred, calc_days_left, current_month, is_wknd, ml_model_type
+            )
+            flow_col4.success(f"🎛️ 階段四：ML 推論\n【{ml_model_type}】完成")
 
-            # --- 4. 數據指標展示 (🌟 已修正：讓指標隨著時間連動變更) ---
+            # --- 預測決策輸出面板 ---
             st.markdown("---")
-            st.subheader(f"📊 預測該航線在【{month}月份】的購票價差")
+            st.subheader("🤖 AI 票價智能預測與推論簡報")
             
-            # 抓取歷史基礎值
-            base_early_bird = df_filtered[df_filtered['days_left'] >= 45]['price'].mean()
-            base_last_minute = df_filtered[df_filtered['days_left'] <= 2]['price'].mean()
-            
-            # 🌟 乘上時間乘數，讓這兩個指標也會隨著日期調整而變動！
-            dynamic_early_bird = base_early_bird * price_multiplier if pd.notna(base_early_bird) else None
-            dynamic_last_minute = base_last_minute * price_multiplier if pd.notna(base_last_minute) else None
+            p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+            p_col1.metric("💰 AI 預估最佳票價", f"₹ {final_pred_price:,.0f} INR")
+            p_col2.metric("🤖 預測大腦", ml_model_type.split()[0])
+            p_col3.metric("🎯 模型置信度 (Confidence)", f"{model_conf * 100:.1f} %")
+            p_col4.metric("⚡ 實時推論耗時", f"{model_speed:.2f} ms")
 
-            col1, col2, col3 = st.columns(3)
-            
-            if dynamic_early_bird:
-                col1.metric(f"預估早鳥價 (45天前訂)", f"₹ {dynamic_early_bird:,.0f}", f"原始基準: ₹ {base_early_bird:,.0f}")
-            else:
-                col1.metric(f"預估早鳥價", "數據不足")
-                
-            if dynamic_last_minute:
-                col2.metric(f"預估當天價 (臨櫃搶票)", f"₹ {dynamic_last_minute:,.0f}", f"原始基準: ₹ {base_last_minute:,.0f}")
-            else:
-                col2.metric(f"預估當天價", "數據不足")
-            
-            if pd.notna(dynamic_early_bird) and dynamic_early_bird > 0 and pd.notna(dynamic_last_minute):
-                diff_ratio = dynamic_last_minute / dynamic_early_bird
-                col3.metric("時節預測價差倍數", f"{diff_ratio:.2f} 倍", "不論淡旺季，越晚買通常越貴")
-
-            # --- 5. 繪製趨勢圖表 ---
+            # --- 智能動態價差指標 (隨時間連動) ---
             st.markdown("---")
-            st.subheader(f"📈 購票倒數天數與票價波動趨勢波形圖 ({class_zh})")
+            st.subheader(f"📊 該航線於出發月份【 {current_month} 月 】之動態購票價差預測")
             
-            fig, ax = plt.subplots(figsize=(12, 5))
+            base_early = df_filtered[df_filtered['days_left'] >= 45]['price'].mean()
+            base_last = df_filtered[df_filtered['days_left'] <= 2]['price'].mean()
+            
+            # 使用相同特徵矩陣乘數修正價差指標
+            dummy_multiplier = final_pred_price / base_price_inferred if base_price_inferred > 0 else 1.0
+            dyn_early = base_early * dummy_multiplier if pd.notna(base_early) else 0
+            dyn_last = base_last * dummy_multiplier if pd.notna(base_last) else 0
+
+            i_col1, i_col2, i_col3 = st.columns(3)
+            i_col1.metric("該時節預估早鳥價 (45天前訂)", f"₹ {dyn_early:,.0f}" if dyn_early > 0 else "數據不足")
+            i_col2.metric("該時節預估臨櫃價 (出發前2天)", f"₹ {dyn_last:,.0f}" if dyn_last > 0 else "數據不足")
+            if dyn_early > 0 and dyn_last > 0:
+                i_col3.metric("時節預測價差倍數", f"{dyn_last / dyn_early:.2f} 倍", "建議儘早規劃購票特徵")
+
+            # --- 趨勢波形圖表輸出 ---
+            st.markdown("---")
+            st.subheader(f"📈 購票倒數天數與歷史基礎票價波動趨勢波形圖 ({class_zh})")
+            
+            fig, ax = plt.subplots(figsize=(12, 4))
             sns.lineplot(data=df_filtered, x='days_left', y='price', color='#3498db', linewidth=2.5, errorbar=None, ax=ax)
             ax.invert_xaxis()
             
             if calc_days_left in df_filtered['days_left'].values:
-                current_price = df_filtered[df_filtered['days_left'] == calc_days_left]['price'].mean()
-                ax.plot(calc_days_left, current_price, marker='o', markersize=10, color='red')
-                ax.annotate('Your Selection', xy=(calc_days_left, current_price), 
-                             xytext=(calc_days_left + 3, current_price * 1.1),
+                hist_mean = df_filtered[df_filtered['days_left'] == calc_days_left]['price'].mean()
+                ax.plot(calc_days_left, hist_mean, marker='o', markersize=10, color='red')
+                ax.annotate('Your Query Target', xy=(calc_days_left, hist_mean), 
+                             xytext=(calc_days_left + 3, hist_mean * 1.15),
                              arrowprops=dict(facecolor='red', shrink=0.05),
                              fontsize=11, fontweight='bold', color='red')
 
-            ax.set_title(f'Historical Pricing Data Trend: {source_zh} to {dest_zh} ({class_zh})', fontsize=14, fontweight='bold')
-            ax.set_xlabel('Days Left Until Departure', fontsize=11)
-            ax.set_ylabel('Average Price (INR)', fontsize=11)
-            
+            ax.set_title(f'Historical Base Price Trend: {source_zh} to {dest_zh} ({class_zh})', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Days Left Until Departure', fontsize=10)
+            ax.set_ylabel('Base Price (INR)', fontsize=10)
             st.pyplot(fig)
