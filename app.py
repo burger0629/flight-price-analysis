@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 # ==========================================
 st.set_page_config(page_title="全球航班智能預測系統", page_icon="✈️", layout="wide")
 
-# 🌟 設定盧比對新台幣的匯率 (可隨時手動更新)
+# 🌟 設定盧比對新台幣的匯率
 INR_TO_NTD = 0.385
 
 if "secure_token" not in st.session_state:
@@ -49,7 +49,6 @@ if st.session_state["secure_token"] is None:
 # ==========================================
 st.markdown("""
     <style>
-    /* 特效 1：全局淡入滑動 */
     @keyframes fadeInSlideUp {
         0% { opacity: 0; transform: translateY(30px); }
         100% { opacity: 1; transform: translateY(0); }
@@ -58,7 +57,6 @@ st.markdown("""
         animation: fadeInSlideUp 0.8s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
     }
 
-    /* 特效 2：標題流光掃描 */
     h1 {
         background: linear-gradient(90deg, #001f3f 0%, #3498db 50%, #001f3f 100%);
         background-size: 200% auto;
@@ -70,7 +68,6 @@ st.markdown("""
         to { background-position: 200% center; }
     }
 
-    /* 特效 3：動態流光主按鈕 */
     button[kind="primary"] {
         background: linear-gradient(270deg, #00c6ff, #0072ff, #00c6ff);
         background-size: 200% 200%;
@@ -91,7 +88,6 @@ st.markdown("""
         100% { background-position: 0% 50%; }
     }
 
-    /* 特效 4：冰晶擬物化數據卡片與 Q彈懸浮 */
     div[data-testid="metric-container"] {
         background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(240, 248, 255, 0.6));
         backdrop-filter: blur(10px);
@@ -166,7 +162,7 @@ st.caption(f"🔒 權杖: `{st.session_state['secure_token']}` ｜ 連線時間:
 
 with st.expander("📍 第一步：設定航線與艙等", expanded=True):
     col1, col2, col3, col4 = st.columns(4)
-    trip_type = col1.radio("行程類型", ["單程票", "來回票 (享綁定折扣)"])
+    trip_type = col1.radio("行程類型", ["單程票", "來回套票 (享動態折扣)"])
     source_zh = col2.selectbox("🛫 出發地", list(city_mapping.keys()), index=0)
     dest_zh = col3.selectbox("🛬 目的地", list(city_mapping.keys()), index=1)
     class_zh = col4.selectbox("💺 艙等", ["經濟艙", "商務艙"])
@@ -178,23 +174,55 @@ with st.expander("🗓️ 第二步：選擇出發與回程日期", expanded=Tru
     depart_date = col_d1.date_input("🛫 預計出發日期", value=today + datetime.timedelta(days=15), min_value=today)
     
     return_date = None
-    if trip_type == "來回票 (享綁定折扣)":
+    if trip_type == "來回套票 (享動態折扣)":
         return_date = col_d2.date_input("🛬 預計回程日期", value=depart_date + datetime.timedelta(days=5), min_value=depart_date)
 
 # ==========================================
-# 🌟 5. 核心演算法與矩陣生成
+# 🌟 5. 核心演算法：加入【動態來回折扣計算】
 # ==========================================
-def machine_learning_inference(base_price, days_left, month, is_wknd, is_round_trip):
+def calculate_dynamic_discount(airline, source, dest, month):
+    """計算動態套票折扣率 (Dynamic Round-trip Discount)"""
+    discount_rate = 0.0
+    
+    # 1. 航空定位特徵
+    if airline in ["Vistara", "Air_India"]: 
+        discount_rate += 0.10 # 傳統航空基礎折扣大
+    else: 
+        discount_rate += 0.03 # 廉價航空(LCC)基礎折扣極小
+        
+    # 2. 航線繁忙度特徵
+    high_traffic_routes = [("Delhi", "Mumbai"), ("Mumbai", "Delhi"), 
+                           ("Bangalore", "Delhi"), ("Delhi", "Bangalore")]
+    if (source, dest) in high_traffic_routes:
+        discount_rate -= 0.02 # 黃金航線折扣縮水
+    else:
+        discount_rate += 0.02 # 一般航線促銷加碼
+        
+    # 3. 季節供需特徵
+    if month in [10, 11, 5, 6]:
+        discount_rate -= 0.03 # 旺季折扣縮水
+    elif month in [7, 8, 9]:
+        discount_rate += 0.05 # 淡季雨季折扣大放送
+        
+    # 確保折扣落在合理範圍 0% ~ 20% 之間
+    return max(0.0, min(discount_rate, 0.20))
+
+def machine_learning_inference(base_price, days_left, month, is_wknd, is_round_trip, airline, source, dest):
     multiplier = 1.0
     if month in [10, 11]: multiplier = 1.45
     elif month == 3: multiplier = 1.35
     elif month in [7, 8, 9]: multiplier = 0.85
     
     if is_wknd: multiplier += 0.08
-    if is_round_trip: multiplier *= 0.88
     if days_left <= 3: multiplier *= 1.25
     
-    return round(base_price * multiplier), multiplier, 0.94, 8.7 
+    # 取得動態折扣
+    dynamic_discount_rate = 0.0
+    if is_round_trip:
+        dynamic_discount_rate = calculate_dynamic_discount(airline, source, dest, month)
+        multiplier *= (1.0 - dynamic_discount_rate)
+    
+    return round(base_price * multiplier), multiplier, dynamic_discount_rate, 0.94, 8.7 
 
 def generate_flex_matrix(center_price):
     np.random.seed(int(time.time()))
@@ -229,6 +257,9 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
         df_filtered = df_all[(df_all['source_city'] == source_en) & (df_all['destination_city'] == dest_en)]
         df_filtered = df_filtered[df_filtered['class'] == ("Economy" if class_zh == "經濟艙" else "Business")]
         
+        # 為了動態折扣計算，需要知道當前是哪家航空。如果選"顯示所有"，預設用平均邏輯(此處以 Vistara 為例)
+        calc_airline = airline_mapping[airline_zh] if airline_zh != "顯示所有航空" else "Vistara"
+        
         if airline_zh != "顯示所有航空":
             df_filtered = df_filtered[df_filtered['airline'] == airline_mapping[airline_zh]]
         if selected_stops_zh != "不限轉機次數" and 'stops' in df_filtered.columns:
@@ -242,19 +273,24 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
             st.error("❌ 查無符合條件的歷史航班，請放寬篩選條件。")
         else:
             base_price = df_filtered['price'].mean()
-            final_price, multiplier, conf, speed = machine_learning_inference(
-                base_price, calc_days, depart_date.month, depart_date.weekday() >= 5, trip_type == "來回票 (享綁定折扣)"
+            # 🌟 傳入航線與航空參數以計算動態折扣
+            final_price, multiplier, discount_rate, conf, speed = machine_learning_inference(
+                base_price, calc_days, depart_date.month, depart_date.weekday() >= 5, 
+                trip_type == "來回套票 (享動態折扣)", calc_airline, source_en, dest_en
             )
 
-            # 🌟 面板 A：核心決策輸出 (加入台幣換算)
+            # 🌟 面板 A：核心決策輸出 (動態顯示計算出的折扣百分比)
             col_r1, col_r2, col_r3, col_r4 = st.columns(4)
             col_r1.metric("💰 AI 最佳預估總價", f"₹ {final_price:,.0f}", 
                           delta=f"🇹🇼 約 NT$ {final_price * INR_TO_NTD:,.0f}", delta_color="off")
             col_r2.metric("🎯 演算法置信度", f"{conf*100:.1f} %")
             col_r3.metric("🔀 轉機條件", selected_stops_zh.split()[0])
-            col_r4.metric("🎟️ 票種折扣", "已套用 -12%" if trip_type == "來回票 (享綁定折扣)" else "單程基準")
+            
+            # 動態顯示這張票拿到了多少 % 的折扣
+            discount_str = f"已套用 -{int(discount_rate * 100)}%" if trip_type == "來回套票 (享動態折扣)" else "單程基準無折扣"
+            col_r4.metric("🎟️ AI 動態票種折扣", discount_str)
 
-            # 🌟 面板 B：早鳥與臨櫃動態價差比較 (加入台幣換算)
+            # 🌟 面板 B：早鳥與臨櫃動態價差比較
             st.markdown("---")
             st.subheader("📊 早鳥 vs 臨櫃購票價差預測 (已連動時節權重)")
             base_early = df_filtered[df_filtered['days_left'] >= 45]['price'].mean()
@@ -270,14 +306,14 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
             if dyn_early > 0 and dyn_last > 0:
                 i_col3.metric("時節預測價差倍數", f"{dyn_last / dyn_early:.2f} 倍", "越晚買越貴提示")
 
-            # 🌟 面板 C：Plotly 互動式彈性日期圖表 (加入台幣換算 Hover)
+            # 🌟 面板 C：Plotly 互動式彈性日期圖表
             st.markdown("---")
-            if trip_type == "來回票 (享綁定折扣)":
+            if trip_type == "來回套票 (享動態折扣)":
                 st.subheader("🗺️ 互動式彈性日期票價熱力矩陣 (前後 2 天)")
                 st.caption("💡 矩陣呈現出發與回程的交叉組合。游標懸浮於方塊上可檢視詳細組合與台幣換算！")
                 
                 matrix_df = generate_flex_matrix(final_price)
-                ntd_matrix = matrix_df * INR_TO_NTD # 建立台幣換算矩陣供 Hover 使用
+                ntd_matrix = matrix_df * INR_TO_NTD 
                 
                 outbound_labels = [(depart_date + datetime.timedelta(days=i-2)).strftime("%m/%d") for i in range(5)]
                 inbound_labels = [(return_date + datetime.timedelta(days=i-2)).strftime("%m/%d") for i in range(5)]
@@ -315,7 +351,7 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
                     prices.append(int(final_price * (1 + noise + day_distance_penalty)))
                     
                 df_nearby = pd.DataFrame({"出發日期": date_strs, "預估票價": prices})
-                df_nearby['NTD'] = df_nearby['預估票價'] * INR_TO_NTD # 加入台幣欄位
+                df_nearby['NTD'] = df_nearby['預估票價'] * INR_TO_NTD
                 
                 fig_bar = px.bar(df_nearby, x="出發日期", y="預估票價", text="預估票價", color="預估票價",
                                  color_continuous_scale="YlGnBu", custom_data=['NTD'])
@@ -326,13 +362,13 @@ if st.button("🚀 執行智能大數據查詢", type="primary", use_container_w
                 fig_bar.update_layout(title="單程票鄰近日比價圖", title_font_size=16, yaxis_title="預估票價 (INR)", margin=dict(t=50))
                 st.plotly_chart(fig_bar, use_container_width=True)
 
-            # 🌟 面板 D：Plotly 互動式大趨勢波形圖 (加入台幣換算 Hover)
+            # 🌟 面板 D：Plotly 互動式大趨勢波形圖 
             st.markdown("---")
             st.subheader(f"📈 購票倒數天數與歷史基礎票價互動趨勢圖 ({class_zh})")
             st.caption("💡 拖曳可放大圖表，滑鼠懸浮可精確查看每天的歷史基準價與台幣換算。")
             
             df_line = df_filtered.groupby('days_left')['price'].mean().reset_index()
-            df_line['NTD'] = df_line['price'] * INR_TO_NTD # 加入台幣欄位
+            df_line['NTD'] = df_line['price'] * INR_TO_NTD
             
             fig_line = px.line(df_line, x='days_left', y='price', markers=True, custom_data=['NTD'])
             fig_line.update_traces(
